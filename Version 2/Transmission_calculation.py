@@ -9,6 +9,7 @@ from astropy.modeling.models import Moffat2D
 
 from astropy.io import fits
 
+# This module contains functions needed to calculate transmissions from PSF shifts
 
 def analytical_gaussian(fibre_diameter,FWHMs,shifts,k_lim):
     """
@@ -17,14 +18,14 @@ def analytical_gaussian(fibre_diameter,FWHMs,shifts,k_lim):
     Analytical solution featuring infinite sum
 
     INPUTS:
-    fibre_diameter: float, astropy units
+    fibre_diameter: float, arcsec astropy units
         diameter of the fibre/aperture
     FWHMs: array, astropy units
         array of FWHMs
     shifts: array, astropy units
         array of shifts
     k_lim: float
-        term to carry out the infinite sum too; rapidly converges within typically 20 terms
+        term to carry out the infinite sum too; rapidly converges within typically ~20 terms
 
     OUTPUTS:
     Returns:
@@ -45,7 +46,7 @@ def analytical_gaussian(fibre_diameter,FWHMs,shifts,k_lim):
     transmission=prefactor*k_sum
     return transmission
 
-def calculate_FWHM(wavelength,airmass,median_FWHM,median_FWHM_lambda,kolb_factor):
+def calculate_FWHM(wavelength,airmass,median_FWHM,median_FWHM_lambda,kolb_factor=True):
     """
     Calculates FWHM of the monochromatic PSFs for different wavelengths and airmass
 
@@ -55,11 +56,11 @@ def calculate_FWHM(wavelength,airmass,median_FWHM,median_FWHM_lambda,kolb_factor
     airmass: float
         airmass to calculate the FWHM at
     kolb_factor: boolean, True or False, default = False
-        whether to use the kolb factor term of the varying PSF FWHM: see https://www.eso.org/observing/etc/doc/helpfors.html
+        whether to use the kolb factor/outer scale term of the varying PSF FWHM: see https://www.eso.org/observing/etc/doc/helpfors.html
 
     OUTPUTS:
     Returns:
-    FWHM: array, astropy units
+    FWHM: array, arcsec astropy units
         FWHM of the monochromatic light depending on wavelength and airmass
     """
     if kolb_factor==True: #FWHM using kolb factor; smaller FWHM
