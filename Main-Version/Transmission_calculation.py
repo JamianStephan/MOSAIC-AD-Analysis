@@ -51,7 +51,7 @@ def calculate_FWHM(wavelength,airmass,median_FWHM,median_FWHM_lambda,kolb_factor
     Calculates FWHM of the monochromatic PSFs for different wavelengths and airmass
 
     INPUTS:
-    wavelength: array, astropy units
+    wavelength: array, nm astropy units
         wavelength(s) to calculate the FWHM(s) at
     airmass: float
         airmass to calculate the FWHM at
@@ -79,11 +79,11 @@ def numerical_gaussian(fibre_diameter,FWHM,offset,scale):
     Numerical solution
 
     INPUTS:
-    fibre_diameter: float, astropy units
+    fibre_diameter: float, arcsec astropy units
         diameter of the fibre/aperture
-    FWHM: float, astropy units
+    FWHM: float, arcsec astropy units
         FWHM of the PSF
-    offset: float, astropy units
+    offset: float, arcsec astropy units
         offset of the PSF from the aperture
     scale: float
         scale of the numerical simulation, arcsec/pixel
@@ -121,11 +121,11 @@ def numerical_moffat(fibre_diameter,FWHM,offset,scale,beta=2.5):
     Numerical solution
 
     INPUTS:
-    fibre_diameter: float, astropy units
+    fibre_diameter: float, arcsec astropy units
         diameter of the fibre/aperture
-    FWHM: float, astropy units
+    FWHM: float, arcsec astropy units
         FWHM of the PSF
-    offset: float, astropy units
+    offset: float, arcsec astropy units
         offset of the PSF from the aperture
     scale: float
         scale of the numerical simulation, arcsec/pixel
@@ -159,31 +159,48 @@ def numerical_moffat(fibre_diameter,FWHM,offset,scale,beta=2.5):
     trans=sum(sum(convolved_data))/moffat_total
     return trans
 
-def numerical_durham(diameter,wavelength,offset,axis_val):
-    version=0 #1 IS FOR THE COMPRESSED PSFs; ~2x quicker with accuracy reduced to <1%
+def numerical_durham(fibre_diameter,wavelength,offset,axis_val=25,data_version=0):
+    """
+    Calculates transmission of Durham PSF offset from a circular aperture
+    Numerical solution
+
+    INPUTS:
+    fibre_diameter: float, arcsec astropy units
+        diameter of the fibre/aperture
+    wavelength: array, nm astropy units, from [440,562,720,920,1202,1638]nm
+        wavelength of the Durham PSF to use, corresponding to old band centres
+    offset: float, arcsec astropy units
+        offset of the PSF from the aperture
+    axis_val: float, from [0-48]
+        GLAO axis offset for the PSF. 25 is perfectly centred
+    data_version: float, from [0,1]
+        which Durham PSF to use; 0 is the original, 1 is the compressed data to ~0.01 arcsec
+
+    OUTPUTS:
+    Returns:
+    transmission: float
+        transmission value
+    """
     file=fits.open("PSFs/GLAO_Median_{}nm_v2.fits".format(round(wavelength.value)))
-    durham_data=file[version].data[axis_val]
-    scale=file[version].header['scale']
+    durham_data=file[data_version].data[axis_val]
+    scale=file[data_version].header['scale']
 
     offset = abs(offset)
-    
-    fibre_boundary=math.ceil(diameter.value/2/scale)
+    fibre_boundary=math.ceil(fibre_diameter.value/2/scale)
     data_boundary=len(durham_data)
 
     x = np.arange(-fibre_boundary,fibre_boundary+1)
     y = np.arange(-fibre_boundary, fibre_boundary+1)
     x, y = np.meshgrid(x, y)
-
         
-    disk=Disk2D(1,abs(int(offset.value/scale)-offset.value/scale),0,diameter.value/2/scale)
+    disk=Disk2D(1,abs(int(offset.value/scale)-offset.value/scale),0,fibre_diameter.value/2/scale)
     disk_data=disk(x,y)
 
     resized_data=np.zeros([len(disk_data),len(disk_data)])
-
     durham_data=durham_data[int(data_boundary/2-fibre_boundary):int(data_boundary/2+fibre_boundary)+1,int(data_boundary/2-fibre_boundary+offset.value/scale):int(data_boundary/2+fibre_boundary+offset.value/scale)+1]
     resized_data[0:len(durham_data),0:len(durham_data[0])]=durham_data
-
     convolved=resized_data*disk_data
+    
     trans=sum(sum(convolved))
     return trans
 

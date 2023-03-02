@@ -200,23 +200,20 @@ class AD_analysis:
         wave_wavelengths=self.output_parameters['wave_wavelengths']
 
         if reposition == True: #For every snapshot, fibre centre is repositioned to the current "fibrecentre_waveref" wavelength
-            #print("Reposition = True")
             for i in airmasses: #for each airmass, calculate AD shift
                 centre_shift=atm_diff.diff_shift(fibrecentre_waveref,i,guide_waveref,self.conditions) #shift of the fibre centre wavelength from guide wavelength
                 shift=atm_diff.diff_shift(wave_wavelengths,i,guide_waveref,self.conditions)-centre_shift #shifts is relative to the current fibre centre wavelength
                 shifts.append(shift)
 
         elif reposition == False: #For every snapshot, fibre centre is positioned to the first airmass' "fibrecentre_waveref" wavelength
-            #print("Reposition = False")
             centre_shift=atm_diff.diff_shift(fibrecentre_waveref,airmasses[0],guide_waveref,self.conditions) #shift of the original fibre centre wavelength from guide wavelength
             for i in airmasses: #for each airmass, calculate AD shift
                 shift=atm_diff.diff_shift(wave_wavelengths,i,guide_waveref,self.conditions)-centre_shift #shift is relative to original centre
                 shifts.append(shift)
 
         self.output_parameters['shifts']=np.array(shifts) * u.arcsec #Turn list into array with astropy units
-
-    #Below is not documented                
-    def calculate_transmissions(self,k_lim=50,FWHM_change=True,kolb_factor=True,method="analytical",scale=0.01,beta=2.5):     
+              
+    def calculate_transmissions(self,method,k_lim=50,FWHM_change=True,kolb_factor=True,scale=0.01,beta=2.5,axis_val=25,data_version=0):     
         """
         Calculate the loaded waves' transmision using calculated shifts
         Can be done using an analytical gaussian method, or a numerical gaussian/moffat method
@@ -229,7 +226,7 @@ class AD_analysis:
             whether to change the monochromatic FWHM with airmass and wavelength
         kolb_factor: boolean, True or False
             whether to use the kolb factor in FWHM change, as per https://www.eso.org/observing/etc/doc/helpfors.html
-        method: string, "analytical", "numerical guassian", "numerical moffat"
+        method: string, "analytical", "numerical guassian", "numerical moffat", or "numerical durham"
             which method to use for calculating transmission
         scale: float, default=0.01
             scale to use in the numerical methods, arcsec/pixel
@@ -271,9 +268,10 @@ class AD_analysis:
             for i in range(0,len(airmasses)):
                 trans_list=[]
                 for o in range(0,len(wave_wavelengths)):
-                    trans=trans_calc.numerical_durham(fibre_diameter,band_centres[o],shifts[i][o],25)
+                    trans=trans_calc.numerical_durham(fibre_diameter,band_centres[o],shifts[i][o],axis_val=axis_val,data_version=data_version)
                     trans_list.append(trans)
                 wave_transmissions.append(trans_list)   
+                
         elif FWHM_change == True: #Is there a dependence of the FWHM on airmass and wavelength?
             FWHMs = [] #List of the FWHM across the wave for each airmass, [[airmass 1 wave FWHM],[airmass 2 wave FWHM],....]
             for i in airmasses: #For each airmass, calculate the FWHM for each wavelength in the wave
@@ -320,8 +318,6 @@ class AD_analysis:
 
         self.output_parameters['wave_transmissions']=wave_transmissions
         self.output_parameters['FWHMs']=FWHMs
-        
-    #Below is not documented
 
         
 
