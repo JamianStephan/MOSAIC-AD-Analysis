@@ -159,7 +159,7 @@ def numerical_moffat(fibre_diameter,FWHM,offset,scale,beta=2.5):
     trans=sum(sum(convolved_data))/moffat_total
     return trans
 
-def numerical_durham(fibre_diameter,wavelength,offset,axis_val=25,data_version=0):
+def numerical_durham(fibre_diameter,wavelength,offset,axis_val=24,data_version=0):
     """
     Calculates transmission of Durham PSF offset from a circular aperture
     Numerical solution
