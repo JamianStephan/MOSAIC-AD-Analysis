@@ -97,11 +97,12 @@ class AD_analysis:
         return
     
 
-    def load_airmasses(self,HA_range=[],ZA_range=[],targ_dec=-25.3 * u.degree):
+    def load_airmasses(self,HA_range=[],ZA_range=[],airmasses=[],targ_dec=-25.3 * u.degree):
         """
-        Need airmasses for analysis, 2 options:
+        Need airmasses for analysis, 3 options:
         1) Calculated for a target declination at Cerro Paranal using a range of given hour angles
         2) Calculated using given angles from the zenith
+        3) Calculated using given airmasses
         Chose by entering values into the list you want to use
 
         INPUTS:
@@ -109,6 +110,8 @@ class AD_analysis:
             range of hour angles to use
         ZA_range: list, in astropy units, default = []
             range of zenith angles to use
+        airmasses: list, no units, default = []
+            range of airmasses to use
         targ_dec: float, in astropy units, default = -25.3 degrees
            declination of target
 
@@ -125,7 +128,7 @@ class AD_analysis:
         self.airmasses: array
             range of airmasses to use for anlaysis
         """
-        airmasses = np.array([]) 
+        airmasses = np.array(airmasses)
 
         self.input_parameters['ZA_range']=ZA_range
         self.input_parameters['targ_dec']=targ_dec     
@@ -135,7 +138,6 @@ class AD_analysis:
             return
 
         if HA_range != []: #HA into airmasses
-            print("HA used")
             lat = np.deg2rad(-24.6272) #Cerro Paranal Latitude
             dec = targ_dec.to(u.rad).value #Declination of target in radians
             
@@ -159,7 +161,6 @@ class AD_analysis:
             self.output_parameters['meridian_airmass'] = 1/(np.sin(lat)*np.sin(dec)+np.cos(lat)*np.cos(dec)*np.cos(Angle(0*u.hour).rad))
 
         elif ZA_range != []: #ZA into airmasses
-            print("Zenith Angles Used")
             for i in ZA_range:
                 airmasses=np.append(airmasses,1/np.cos(np.deg2rad(i)))
 
@@ -213,7 +214,7 @@ class AD_analysis:
 
         self.output_parameters['shifts']=np.array(shifts) * u.arcsec #Turn list into array with astropy units
               
-    def calculate_transmissions(self,method,k_lim=50,FWHM_change=True,kolb_factor=True,scale=0.01,beta=2.5,axis_val=25,data_version=0):     
+    def calculate_transmissions(self,method,k_lim=50,FWHM_change=True,kolb_factor=True,scale=0.01,beta=2.5,axis_val=24,data_version=0):     
         """
         Calculate the loaded waves' transmision using calculated shifts
         Can be done using an analytical gaussian method, or a numerical gaussian/moffat method
@@ -232,6 +233,10 @@ class AD_analysis:
             scale to use in the numerical methods, arcsec/pixel
         beta: float, default=2.5
             moffat index to use
+        axis_val: integer, 0-48, default = 24
+            Durham PSF offset to use, centred = 24
+        data_version: integer, 0 or 1, default = 0
+            Uncompressed or compressed Durham PSFs, compressed is ~3x quicker but lower accuracy (~1% transmission)
 
         OUTPUTS:
         Input dictionary:
