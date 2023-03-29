@@ -1,23 +1,14 @@
 from configobj import ConfigObj
-import subprocess
-import os, sys
-import math
 import numpy as np
 from astropy import units as u
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from IPython.display import Markdown
-from astropy.table import Table, Column
-from astropy.io import ascii
-from astropy.coordinates import SkyCoord,Angle
-from astropy.time import Time
+
+from astropy.coordinates import Angle
+
 from astroplan import Observer
 import Atmospheric_diffraction as atm_diff
-#%matplotlib inline 
-import math
-from matplotlib.collections import LineCollection
-from matplotlib.colors import ListedColormap, BoundaryNorm
-import matplotlib as mpl
+from astropy.io import fits
+
 plt.style.use('bmh')
 import Transmission_calculation as trans_calc
 
@@ -34,16 +25,16 @@ class AD_analysis:
         self.conditions['humidity']= float(Config_tel['EnvConditions']['AirHumidity']) * u.percent
         self.conditions['pressure']= float(Config_tel['EnvConditions']['AirPressure']) * u.mBa
         self.plate_scale = float(Config_tel['OpticalInterfaces']['Plate_Scale']) #* u.arcsec / u.mm, MOSAIC plate scale
-        self.latitude=-24.6272*u.deg
+        self.latitude=-24.6272*u.deg #Paranal Latitude
         
-        VIS_fibre_diameter=0.69 * u.arcsec #Diameter of VIS MOS fibre
-        IR_fibre_diameter=0.6 * u.arcsec #Diameter of IR MOS fibre
-        median_FWHM=0.68 * u.arcsec #median seeing at Paranal zenith, wavelength = 500nm, in arcsec!
-        median_FWHM_lambda = 500 * u.nm #wavelength of the median seeing at Paranal zenith, in nm!
+        VIS_aperture_diameter=0.69 * u.arcsec #Diameter of VIS MOS aperture = Sampling * 3 = 234 * 3
+        IR_aperture_diameter=0.57 * u.arcsec #Diameter of IR MOS aperture = Sampling * 3 = 190 * 3
+        median_FWHM=0.68 * u.arcsec #median seeing at Paranal zenith, wavelength = 500nm, in arcsec
+        median_FWHM_lambda = 500 * u.nm #wavelength of the median seeing at Paranal zenith, in nm
 
         self.input_parameters = {} #Dictionary of all parameters usd as inputs
-        self.input_parameters['VIS_fibre_diameter']=VIS_fibre_diameter
-        self.input_parameters['IR_fibre_diameter']=IR_fibre_diameter
+        self.input_parameters['VIS_aperture_diameter']=VIS_aperture_diameter
+        self.input_parameters['IR_aperture_diameter']=IR_aperture_diameter
         self.input_parameters['median_FWHM']=median_FWHM
         self.input_parameters['median_FWHM_lambda']=median_FWHM_lambda
 
@@ -63,7 +54,7 @@ class AD_analysis:
             band to use for the minimum wavelength
         max_band: string, same as above
             band to use for the maximum wavelength
-        sampling: float, in nm
+        sampling: float, in nm astropy units
             gap between each monochromatic wavelength
 
         OUTPUTS:
@@ -72,29 +63,27 @@ class AD_analysis:
             used for labelling graphs during plot
 
         Output dictionary:        
-        fibre_diameter: float, in astropy units
-            diameter of the fibre to use, depends on _init_ values
+        aperture_diameter: float, in astropy units
+            diameter of the aperture to use, depends on _init_ values
         wave_wavelengths: array, in astropy units
             array of the different monochromatic wavelengths to model
         """
         self.input_parameters['regime']=regime #Store parameters in dictionary
         self.input_parameters['res']=res
 
-
         if min_band==max_band:
             self.input_parameters['band']=min_band
         else:
-            self.input_parameters['band']="All"
             self.input_parameters['band']="All"
 
         Config_regime = ConfigObj('./Architecture_parameters/'+regime+'_channel_conf.ini') #Loads VIS or NIR parameters
         #Wave is sampled between min_band min wavelength and max_band max wavelength in intervals of sampling variable
         self.output_parameters['wave_wavelengths'] = np.arange(int(Config_regime[res]['Bands'][min_band]['wave_min']),int(Config_regime[res]['Bands'][max_band]['wave_max'])+1,sampling.value) * u.nm
 
-        if regime == 'VIS': #VIS and NIR fibres have different radii, stores appropriately
-            self.output_parameters['fibre_diameter']=self.input_parameters['VIS_fibre_diameter']
+        if regime == 'VIS': #VIS and NIR apertures have different radii, stores appropriately
+            self.output_parameters['aperture_diameter']=self.input_parameters['VIS_aperture_diameter']
         elif regime == 'NIR':
-            self.output_parameters['fibre_diameter']=self.input_parameters['IR_fibre_diameter']
+            self.output_parameters['aperture_diameter']=self.input_parameters['IR_aperture_diameter']
         return
     
 
@@ -129,11 +118,6 @@ class AD_analysis:
         self.airmasses: array
             range of airmasses to use for anlaysis
         """
-        airmasses = np.array(airmasses)
-
-        self.input_parameters['ZA_range']=ZA_range
-        self.input_parameters['targ_dec']=targ_dec     
-
         if HA_range != [] and ZA_range != []: #Only does analysis for HA range or zenith angles. Why do you need both at once?
             print("Don't use both, use one or the other!")
             return
@@ -161,29 +145,39 @@ class AD_analysis:
             
             self.output_parameters['meridian_airmass'] = 1/(np.sin(lat)*np.sin(dec)+np.cos(lat)*np.cos(dec)*np.cos(Angle(0*u.hour).rad))
 
+            para_angles=atm_diff.parallatic_angle(np.array(HA_range),targ_dec,self.latitude)
+            para_angles_2=para_angles.copy()
+            for i in range(0,len(para_angles)):
+                para_angles_2[i]=para_angles[i]-para_angles[0]
+            
+            self.output_parameters['para_angles']=np.array(para_angles_2)
+
         elif ZA_range != []: #ZA into airmasses
             for i in ZA_range:
                 airmasses=np.append(airmasses,1/np.cos(np.deg2rad(i)))
+            self.output_parameters['para_angles']=np.zeros(len(airmasses))
 
-        self.output_parameters['airmasses']=airmasses
+        self.output_parameters['airmasses']=np.array(airmasses)
         self.input_parameters['HA_range']=HA_range
+        self.input_parameters['ZA_range']=ZA_range
+        self.input_parameters['targ_dec']=targ_dec     
 
-    def calculate_shifts(self, guide_waveref=0.537 * u.micron, fibrecentre_waveref=0.537 * u.micron, reposition = False):
+    def calculate_shifts(self, guide_waveref=0.537 * u.micron, aperturecentre_waveref=0.537 * u.micron, reposition = False, parallatic=True):
         """
         Calculates snapshots of the shifts of the monochromatic PSFs for given airmasses from load_airmasses
-        Can either have the fibre at a fixed point, or at the centre of each snapshot
+        Can either have the aperture at a fixed point, or at the centre of each snapshot
 
         INPUTS:
         guide_waveref: float, in astropy units, default = 0.537 microns
-            wavelength the telescope is tracking on; this is the fixed point of the spectrum (doesn't matter if fibres are repositioned)
-        fibrecentre_waveref: float, in astropy units, default = 0.537 microns
-            wavelength the fibres are centred on
+            wavelength the telescope is tracking on; this is the fixed point of the spectrum (doesn't matter if apertures are repositioned)
+        aperturecentre_waveref: float, in astropy units, default = 0.537 microns
+            wavelength the apertures are centred on
         reposition: boolean, True or False, default = False
-            whether to reposition the fibres each snapshot to the fibrecentre_waveref wavelength, or keep them at the original position
+            whether to reposition the apertures each snapshot to the aperturecentre_waveref wavelength, or keep them at the original position
 
         OUTPUTS:
         Input dictionary:
-        self.guide_waveref, self.fibrecentre_waveref: float, astropy units
+        self.guide_waveref, self.aperturecentre_waveref: float, astropy units
             used for plotting
         self.reposition: boolean, True or False
             used for plotting
@@ -193,33 +187,65 @@ class AD_analysis:
             shifts of the monochromatic PSFs for different airmasses. Form is [[airmass 1 shifts...][airmass 2 shifts..][...]...]
         """
         shifts=[] #AD Shifts
-
         self.input_parameters['guide_waveref']=guide_waveref
-        self.input_parameters['fibrecentre_waveref']=fibrecentre_waveref
-        self.input_parameters['reposition']=reposition
+        self.input_parameters['aperturecentre_waveref']=aperturecentre_waveref
+        self.input_parameters['reposition']=reposition      
     
         airmasses=self.output_parameters['airmasses']
         wave_wavelengths=self.output_parameters['wave_wavelengths']
 
-        if reposition == True: #For every snapshot, fibre centre is repositioned to the current "fibrecentre_waveref" wavelength
+        if reposition == True: #For every snapshot, aperture centre is repositioned to the current "aperturecentre_waveref" wavelength
             for i in airmasses: #for each airmass, calculate AD shift
-                centre_shift=atm_diff.diff_shift(fibrecentre_waveref,i,guide_waveref,self.conditions) #shift of the fibre centre wavelength from guide wavelength
-                shift=atm_diff.diff_shift(wave_wavelengths,i,guide_waveref,self.conditions)-centre_shift #shifts is relative to the current fibre centre wavelength
+                centre_shift=atm_diff.diff_shift(aperturecentre_waveref,i,guide_waveref,self.conditions) #shift of the aperture centre wavelength from guide wavelength
+                shift=atm_diff.diff_shift(wave_wavelengths,i,guide_waveref,self.conditions)-centre_shift #shifts is relative to the current aperture centre wavelength
                 shifts.append(shift)
 
-        elif reposition == False: #For every snapshot, fibre centre is positioned to the first airmass' "fibrecentre_waveref" wavelength
-            centre_shift=atm_diff.diff_shift(fibrecentre_waveref,airmasses[0],guide_waveref,self.conditions) #shift of the original fibre centre wavelength from guide wavelength
+        if reposition == False and parallatic == False: #For every snapshot, aperture centre is positioned to the first airmass' "aperturecentre_waveref" wavelength
+            centre_shift=atm_diff.diff_shift(aperturecentre_waveref,airmasses[0],guide_waveref,self.conditions) #shift of the original aperture centre wavelength from guide wavelength
             for i in airmasses: #for each airmass, calculate AD shift
                 shift=atm_diff.diff_shift(wave_wavelengths,i,guide_waveref,self.conditions)-centre_shift #shift is relative to original centre
                 shifts.append(shift)
 
+        #parallatic angles stuff:
+        if reposition == False and parallatic == True: #For every snapshot, aperture centre is positioned to the first airmass' "aperturecentre_waveref" wavelength
+            para_angles=self.output_parameters['para_angles']
+            centre_shift=atm_diff.diff_shift(aperturecentre_waveref,airmasses[0],guide_waveref,self.conditions) #shift of the original aperture centre wavelength from guide wavelength
+            for count,i in enumerate(airmasses): #for each airmass, calculate AD shift
+                shift_vals=atm_diff.diff_shift(wave_wavelengths,i,guide_waveref,self.conditions)
+                shift=np.sqrt(shift_vals**2+centre_shift**2-2*shift_vals*centre_shift*np.cos(para_angles[count])) #shift is relative to original centre
+                shifts.append(shift)      
+            
         self.output_parameters['shifts']=np.array(shifts) * u.arcsec #Turn list into array with astropy units
-              
-    def calculate_transmissions(self,method,k_lim=50,FWHM_change=True,kolb_factor=True,scale=0.01,beta=2.5,axis_val=24,data_version=0):     
+      
+    def make_aperture(self,aperture_type="circle",method="numerical moffat",scale=0.01,data_version=0):        
+        self.input_parameters['scale']=scale
+        self.input_parameters['method']=method
+        self.input_parameters['data_version']=data_version
+        self.input_parameters['aperture_type']=aperture_type
+        
+        aperture_diameter=self.output_parameters['aperture_diameter']
+        
+        PSF_wavelengths=[440,562,720,920,1202,1638]*u.nm
+        
+        if method == "numerical durham":
+            aperture=[]
+            for wavelength in PSF_wavelengths:
+                file=fits.open("PSFs/GLAO_Median_{}nm_v2.fits".format(round(wavelength.value)))
+                scale=file[data_version].header['scale']
+                aperture.append(trans_calc.make_aperture(aperture_type,scale,aperture_diameter))
+                self.input_parameters['scale']="Durham"
+        elif method == "analytical guassian":
+            aperture=[]
+        else:
+            aperture=trans_calc.make_aperture(aperture_type,scale,aperture_diameter)
+            
+        self.output_parameters['aperture_array']=aperture
+        
+    def calculate_transmissions(self,k_lim=50,FWHM_change=True,kolb_factor=True,scale=0.01,beta=2.5,axis_val=24):     
         """
         Calculate the loaded waves' transmision using calculated shifts
         Can be done using an analytical gaussian method, or a numerical gaussian/moffat method
-        Fibre is currently modelled as a circular aperture
+        aperture is currently modelled as a circular aperture
 
         INPUTS:
         k_lim: float, default=50
@@ -248,83 +274,101 @@ class AD_analysis:
         self.wave_transmissions
             transmissions of the wave calculated through the chosen method. Form is [[airmass 1 transmissions...][airmass 2 transmissions...][...]...]
         """
-        self.input_parameters['FWHM_change']=FWHM_change #Store all these parameters for plotting later
+        self.input_parameters['FWHM_change']=FWHM_change #Store all these parameters for later
         self.input_parameters['kolb_factor']=kolb_factor
         self.input_parameters['k_lim']=k_lim
-        self.input_parameters['method']=method
         self.input_parameters['beta']=beta
-        self.input_parameters['scale']=scale
+        
+        scale=self.input_parameters['scale']
+        method=self.input_parameters['method']
+        data_version=self.input_parameters['data_version']
+        aperture=self.output_parameters['aperture_array']
 
         wave_wavelengths = self.output_parameters['wave_wavelengths']
         airmasses=self.output_parameters['airmasses']
         shifts=self.output_parameters['shifts']
-        fibre_diameter=self.output_parameters['fibre_diameter']
-
+        aperture_diameter=self.output_parameters['aperture_diameter']
         median_FWHM=self.input_parameters['median_FWHM']
         median_FWHM_lambda=self.input_parameters['median_FWHM_lambda']
 
         if method=="numerical durham":
-            PSF_wavelengths=[440,562,720,920,1202,1638]*u.nm
-            band_centres=[]
-            wave_transmissions=[]
-            FWHMs=band_centres
-            for wavelength in wave_wavelengths:
-                arg=abs(PSF_wavelengths.value-wavelength.value).argmin()
-                band_centres.append(PSF_wavelengths[arg])
-            for i in range(0,len(airmasses)):
-                trans_list=[]
-                for o in range(0,len(wave_wavelengths)):
-                    trans=trans_calc.numerical_durham(fibre_diameter,band_centres[o],shifts[i][o],axis_val=axis_val,data_version=data_version)
-                    trans_list.append(trans)
-                wave_transmissions.append(trans_list)   
+                PSF_wavelengths=[440,562,720,920,1202,1638]*u.nm
+                band_centres=[]
+                wave_transmissions=[]
+                FWHMs=[]
+                
+                durham_PSFs=[]
+                durham_scales=[]
+                
+                for wavelength in PSF_wavelengths:
+                    file=fits.open("PSFs/GLAO_Median_{}nm_v2.fits".format(round(wavelength.value)))
+                    scale=file[data_version].header['scale']
+                    durham_PSFs.append(file[data_version].data[axis_val])
+                    durham_scales.append(scale)
+
+                for wavelength in wave_wavelengths:
+                    arg=abs(PSF_wavelengths.value-wavelength.value).argmin()
+                    band_centres.append(PSF_wavelengths[arg])
+
+                for i in range(0,len(airmasses)):
+                    trans_list=[]
+                    for o in range(0,len(wave_wavelengths)):
+                        index=list(PSF_wavelengths.value).index(round(band_centres[o].value))
+                        trans=trans_calc.numerical_durham(aperture[index],durham_PSFs[index],shifts[i][o],durham_scales[index],data_version=data_version)
+                        trans_list.append(trans)
+                    wave_transmissions.append(trans_list)   
                 
         elif FWHM_change == True: #Is there a dependence of the FWHM on airmass and wavelength?
             FWHMs = [] #List of the FWHM across the wave for each airmass, [[airmass 1 wave FWHM],[airmass 2 wave FWHM],....]
             for i in airmasses: #For each airmass, calculate the FWHM for each wavelength in the wave
                 FWHMs.append(trans_calc.calculate_FWHM(wave_wavelengths,i,median_FWHM,median_FWHM_lambda,kolb_factor))
             FWHMs=np.array(FWHMs) * u.arcsec
+            
             if method=="analytical": #use analytical method
-                wave_transmissions=trans_calc.analytical_gaussian(fibre_diameter,FWHMs,shifts,k_lim) #Transmission of light into fibre using changing FWHM       
+                wave_transmissions=trans_calc.analytical_gaussian(aperture_diameter,FWHMs,shifts,k_lim) #Transmission of light into aperture using changing FWHM       
+                
             elif method=="numerical gaussian": #Use numerical gaussian method. Function does not take in arrays, so a loop is needed
                 wave_transmissions=[]
                 for i in range(0,len(airmasses)): #For every airmass, need transmissions
                     trans_list=[] #List of transmissions for the airmass
                     for o in range(0,len(wave_wavelengths)): #For every monochromatic PSF, need it's transmission in that airmass
-                        trans=trans_calc.numerical_gaussian(fibre_diameter,FWHMs[i][o],shifts[i][o],scale) #Transmission for given wavelength at given airmass
+                        trans=trans_calc.numerical_gaussian(aperture,FWHMs[i][o],shifts[i][o],scale) #Transmission for given wavelength at given airmass
                         trans_list.append(trans)
                     wave_transmissions.append(trans_list) #Append this airmass transmissions' to the list
+                    
             elif method=="numerical moffat": #Use numerical moffat method. Function does not take in arrays, so a loop is needed
                 wave_transmissions=[]
                 for i in range(0,len(airmasses)): #For every airmass, need transmissions
                     trans_list=[] #List of transmissions for the airmass
                     for o in range(0,len(wave_wavelengths)): #For every monochromatic PSF, need it's transmission in that airmass
-                        trans=trans_calc.numerical_moffat(fibre_diameter,FWHMs[i][o],shifts[i][o],scale,beta=beta) #Transmission for given wavelength at given airmass
+                        trans=trans_calc.numerical_moffat(aperture,FWHMs[i][o],shifts[i][o],scale,beta=beta) #Transmission for given wavelength at given airmass
                         trans_list.append(trans) 
                     wave_transmissions.append(trans_list) #Append this airmass transmissions' to the list
+                    
         else:
             FWHMs=np.full((len(airmasses),len(wave_wavelengths)),median_FWHM) * u.arcsec
+            
             if method=="analytical":
-                wave_transmissions=trans_calc.analytical_gaussian(fibre_diameter,median_FWHM,shifts,k_lim) #Transmission of light into fibre using changing FWHM
+                wave_transmissions=trans_calc.analytical_gaussian(aperture_diameter,median_FWHM,shifts,k_lim) #Transmission of light into aperture using changing FWHM
+                
             elif method=="numerical gaussian":
                 wave_transmissions=[]
                 for i in range(0,len(airmasses)): #For every airmass, need transmissions
                     trans_list=[] #List of transmissions for the airmass
                     for o in range(0,len(wave_wavelengths)): #For every monochromatic PSF, need it's transmission in that airmass
-                        trans=trans_calc.numerical_gaussian(fibre_diameter,FWHMs[i][o],shifts[i][o],scale) #Transmission for given wavelength at given airmass
+                        trans=trans_calc.numerical_gaussian(aperture,FWHMs[i][o],shifts[i][o],scale) #Transmission for given wavelength at given airmass
                         trans_list.append(trans)
                     wave_transmissions.append(trans_list) #Append this airmass transmissions' to the list
+                    
             elif method=="numerical moffat":
                 wave_transmissions=[]
                 for i in range(0,len(airmasses)): #For every airmass, need transmissions
                     trans_list=[] #List of transmissions for the airmass
                     for o in range(0,len(wave_wavelengths)): #For every monochromatic PSF, need it's transmission in that airmass
-                        trans=trans_calc.numerical_moffat(fibre_diameter,FWHMs[i][o],shifts[i][o],scale,beta=beta) #Transmission for given wavelength at given airmass
+                        trans=trans_calc.numerical_moffat(aperture,FWHMs[i][o],shifts[i][o],scale,beta=beta) #Transmission for given wavelength at given airmass
                         trans_list.append(trans) 
                     wave_transmissions.append(trans_list) #Append this airmass transmissions' to the list
 
         self.output_parameters['wave_transmissions']=wave_transmissions
         self.output_parameters['FWHMs']=FWHMs
-
-        
-
 

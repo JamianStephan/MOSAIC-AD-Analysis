@@ -37,7 +37,7 @@ class AD_analysis:
         self.latitude=-24.6272*u.deg
         
         VIS_fibre_diameter=0.69 * u.arcsec #Diameter of VIS MOS fibre
-        IR_fibre_diameter=0.6 * u.arcsec #Diameter of IR MOS fibre
+        IR_fibre_diameter=0.57 * u.arcsec #Diameter of IR MOS fibre
         median_FWHM=0.68 * u.arcsec #median seeing at Paranal zenith, wavelength = 500nm, in arcsec!
         median_FWHM_lambda = 500 * u.nm #wavelength of the median seeing at Paranal zenith, in nm!
 
