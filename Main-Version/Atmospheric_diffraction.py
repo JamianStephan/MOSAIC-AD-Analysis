@@ -1,11 +1,6 @@
 import numpy as np
-import math
-import copy
-from astropy.coordinates import SkyCoord,Angle
-from astropy.io import fits
+from astropy.coordinates import Angle
 from astropy import units as u
-from astropy.constants import c
-from astropy.units import Quantity
 
 def airmass_to_zenith_dist(airmass):
     """
