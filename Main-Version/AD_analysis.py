@@ -175,7 +175,7 @@ class AD_analysis:
 
         self.output['airmasses']=np.array(airmasses)
         
-    def calculate_shifts(self, guide_waveref, aperture_waveref, centring_index=0,reposition = False, parallatic=True):
+    def calculate_shifts(self, guide_waveref, aperture_waveref, centring="mid HA",reposition = False, parallatic=True):
         """
         Calculates snapshots of the shifts of the monochromatic PSFs for given airmasses from load_airmasses
         Can either have the aperture at a fixed point, or at the centre of each snapshot
@@ -185,8 +185,8 @@ class AD_analysis:
             wavelength the telescope is tracking on; this is the fixed point of the spectrum (doesn't matter if apertures are repositioned)
         aperture_waveref: float, in astropy units, default = 0.537 microns
             wavelength the apertures are centred on
-        centring_index: integer, 
-            index of airmasses/HA_range to use when centring the aperture on a wavelength
+        centring: string, "mid HA" or "mid airmass"  or an index
+            FIX
         reposition: boolean, True or False, default = False
             whether to reposition the apertures each snapshot to the aperture_waveref wavelength, or keep them at the original position
             for snapshots, this = true. for integrations, this = false
@@ -204,11 +204,10 @@ class AD_analysis:
         self.input['guide_waveref']=guide_waveref
         self.input['aperture_waveref']=aperture_waveref
         self.input['reposition']=reposition   
-        self.input['centring_index']=centring_index   
     
         airmasses=self.output['airmasses']
         wavelengths=self.output['wavelengths']
-        
+
         shifts=[] 
         if reposition == True: #For every snapshot, aperture centre is repositioned to the current "aperture_waveref" wavelength
             for i in airmasses: #For each airmass, calculate AD shift
@@ -218,24 +217,49 @@ class AD_analysis:
                 shifts.append(shift)
 
         if reposition == False and parallatic == False: #For every snapshot, aperture centre is positioned to the first airmass' "aperture_waveref" wavelength
-            print("Centred at {}th airmass".format(centring_index))
             centre_shift=atm_diff.diff_shift(aperture_waveref,airmasses[centring_index],guide_waveref,self.conditions) #shift of the original aperture centre wavelength from guide wavelength
             for i in airmasses: #for each airmass, calculate AD shift
                 #shift values out of the function are all relative to the guide wavelength
                 shift=atm_diff.diff_shift(wavelengths,i,guide_waveref,self.conditions)-centre_shift #-centre shift, so shifts are relative to the original aperture centre wavelength
                 shifts.append(shift)
 
-        if reposition == False and parallatic == True: #Same as above, but includes parallatic angles effect
-            print("Centred at HA = {}".format(self.input['HA_range'][centring_index]))
-            centre_shift=atm_diff.diff_shift(aperture_waveref,airmasses[centring_index],guide_waveref,self.conditions) #shift of the original aperture centre wavelength from guide wavelength
-            self.output['centre_shift']=centre_shift
-                  
-            para_angles=self.output['raw_para_angles'].copy()
-            for i in range(0,len(para_angles)): #change in PAs from centring index
-                para_angles[i]=para_angles[i]-self.output['raw_para_angles'][centring_index]
+        if reposition == False and parallatic == True: #Same as above, but includes parallatic angles effect. Only works for HA 
+                
+            if centring == "mid HA":
+                centring_index=int((len(airmasses)-1)/2)
+            if type(centring) == int:
+                centring_index=centring
+            if type(centring) == int or centring == "mid HA":
+                self.input['centred_on']=str(self.input['HA_range'][centring_index])+"h"
+                centre_shift=atm_diff.diff_shift(aperture_waveref,airmasses[centring_index],guide_waveref,self.conditions) #shift of the original aperture centre wavelength from guide wavelength
+                self.output['centre_shift']=centre_shift
+
+                para_angles=self.output['raw_para_angles'].copy()
+                for i in range(0,len(para_angles)): #change in PAs from centring index
+                    para_angles[i]=para_angles[i]-self.output['raw_para_angles'][centring_index]
+                
+                self.input['centred_q']=self.output['raw_para_angles'][centring_index]
+
+            if centring == "mid airmass":
+                mid_airmass=(airmasses[0]+airmasses[-1])/2
+                self.input['centred_on']="airmass "+str(round(mid_airmass,3))
+                centre_shift=atm_diff.diff_shift(aperture_waveref,mid_airmass,guide_waveref,self.conditions) #shift of the original aperture centre wavelength from guide wavelength
+                self.output['centre_shift']=centre_shift
+                
+                #need to turn airmass into parallatic angle
+                mid_ZA=atm_diff.airmass_to_zenith_dist(mid_airmass)
+                mid_HA=atm_diff.ZA_2_HA(mid_ZA,self.input['targ_dec'])
+                mid_PA=atm_diff.parallatic_angle(mid_HA,self.input['targ_dec'],self.conditions['latitude'])
+
+                para_angles=self.output['raw_para_angles'].copy()
+
+                for i in range(0,len(para_angles)): #change in PAs from centring index
+                    para_angles[i]=para_angles[i]-mid_PA.value
+                
+                self.input['centred_q']=mid_PA.value
+
             self.output['delta_para_angles']=para_angles
-            shifts_no_para=[]
-            
+            shifts_no_para=[]            
             for count,i in enumerate(airmasses): #for each airmass, calculate AD shift
                 #shift values out of the function are all relative to the guide wavelength
                 shift_vals=atm_diff.diff_shift(wavelengths,i,guide_waveref,self.conditions)
