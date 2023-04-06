@@ -46,7 +46,34 @@ def integ_trans(analysis,aperturecentre_waverefs,guide,parallatic,centring):
     
 def integ_metric(normalised_transmissions,metric):
     if metric == "min trans":
-        return min(normalised_transmissions)
+        min_metric=[]
+        for transmission_series in normalised_transmissions:
+            min_metric.append(min(transmission_series))
+        return min_metric
+    
+    if metric == "max trans":
+        max_metric=[]
+        for transmission_series in normalised_transmissions:
+            max_metric.append(max(transmission_series))
+        return max_metric
+    
+
+    if metric == "average trans":
+        mean_metric=[]
+        for transmission_series in normalised_transmissions:
+            mean_metric.append(np.mean(transmission_series))
+        return max_metric
+    
+    if metric == "all":
+        metrics=[]
+
+        for transmission_series in normalised_transmissions:
+            metric=[]
+            metric.append(min(transmission_series))
+            metric.append(max(transmission_series))
+            metric.append(np.mean(transmission_series))
+            metrics.append(metric)
+        return metrics
     
     else:
         print("Metric doesnt exist")
@@ -100,8 +127,6 @@ def track_plot(analysis,y_axis):
         plt.xlabel("x (arcsec)")
         plt.ylabel("y (arcsec)")
         plt.legend()
-        
-
     
     if y_axis == "PA":
         HA_range=analysis.input['HA_range']
