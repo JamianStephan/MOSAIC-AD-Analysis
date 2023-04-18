@@ -25,8 +25,8 @@ class AD_analysis:
         self.conditions['humidity']= float(Config_tel['EnvConditions']['AirHumidity']) * u.percent
         self.conditions['pressure']= float(Config_tel['EnvConditions']['AirPressure']) * u.mBa
         self.conditions['plate_scale'] = float(Config_tel['OpticalInterfaces']['Plate_Scale']) #* u.arcsec / u.mm, MOSAIC plate scale
-        self.conditions['VIS_aperture_diameter']= 0.69 * u.arcsec #Diameter of VIS MOS aperture = Sampling * 3 = 0.234 * 3
-        self.conditions['NIR_aperture_diameter']= 0.57 * u.arcsec #Diameter of IR MOS aperture = Sampling * 3 = 0.190 * 3
+        self.conditions['VIS_aperture_diameter']= 0.702 * u.arcsec #Diameter of VIS MOS aperture = Sampling * 3 = 0.234 * 3
+        self.conditions['NIR_aperture_diameter']= 0.570 * u.arcsec #Diameter of IR MOS aperture = Sampling * 3 = 0.190 * 3
         self.conditions['median_FWHM']= 0.68 * u.arcsec #Median seeing at Paranal zenith, wavelength = 500nm, in arcsec
         self.conditions['median_FWHM_lambda']= 500 * u.nm #Wavelength of the median seeing at Paranal zenith, in nm       
         self.conditions['latitude']=-24.6272*u.deg #Paranal Latitude
@@ -73,7 +73,7 @@ class AD_analysis:
         #Store relevent aperture diameter depending on regime
         self.output['aperture_diameter']=self.conditions[regime+'_aperture_diameter']  
 
-    def load_wave(self,aperture_diameter,start,end,sampling=1*u.nm):
+    def load_wave(self,aperture_diameter,start,end,sampling=1*u.nm,segments=0):
         """
         Target PSF will be modelled as a series of monochromatic wavelengths
         This generates the monochromatic wavelengths to be used in the analysis
@@ -99,8 +99,11 @@ class AD_analysis:
         self.input['res']="N/A"
         self.input['band']=["N/A","N/A"]
        
+        if segments == 0:
         #Wave is sampled between min_band min wavelength and max_band max wavelength in intervals of "sampling" variable
-        self.output['wavelengths'] = np.arange(start,end,sampling.value) * u.nm
+            self.output['wavelengths'] = np.arange(start,end,sampling.value) * u.nm
+        else:
+            self.output['wavelengths'] = np.linspace(start,end,segments) * u.nm
 
         #Store relevent aperture diameter depending on regime
         self.output['aperture_diameter']=aperture_diameter

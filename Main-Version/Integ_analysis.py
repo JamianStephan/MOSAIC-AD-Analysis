@@ -1,5 +1,7 @@
 from AD_analysis import *
 import matplotlib as mpl
+import scipy
+from scipy import integrate
 
 def observation_transmission(transmissions):
     """ 
@@ -23,7 +25,7 @@ def observation_transmission(transmissions):
         integ_transmission.append(trans_mean)
     return integ_transmission
 
-def integ_trans(analysis,aperturecentre_waverefs,guide,parallatic,centring): 
+def integ_trans(analysis,aperturecentre_waverefs,guide,parallatic=True,centring="mid HA"): 
     
     integ_transmissions=[]
     for aperture_val in aperturecentre_waverefs:
@@ -71,13 +73,35 @@ def integ_metric(normalised_transmissions,metric):
             metric=[]
             metric.append(min(transmission_series))
             metric.append(max(transmission_series))
-            metric.append(np.mean(transmission_series))
+            metric.append(scipy.integrate.simpson(transmission_series)/(len(transmission_series)-1))
             metrics.append(metric)
-        return metrics
+        return metrics  
     
     else:
         print("Metric doesnt exist")
         return
+    
+def integ_trans_solo(analysis,guide,aperture,centring="mid HA", parallatic=True): 
+    analysis.calculate_shifts(guide, aperture, centring=centring,reposition = False, parallatic=parallatic)
+    analysis.calculate_transmissions()
+    integ_transmission=observation_transmission(analysis.output['transmissions'])
+    
+    old_shifts=analysis.output['shifts'].copy()
+    for i in range(0,len(analysis.output['shifts'])):
+        for o in range(0,len(analysis.output['shifts'][i])):
+            analysis.output['shifts'][i][o]=0
+    analysis.calculate_transmissions()
+    opt_transmission=observation_transmission(analysis.output['transmissions'])
+    
+    #This step is to retain the original shifts in the code if they're wanted later
+    analysis.output['shifts']=old_shifts
+    
+    return integ_transmission,opt_transmission
+
+def integ_metric_solo(normalised_transmission):
+    metrics=[(min(normalised_transmission)),max(normalised_transmission),
+            scipy.integrate.simpson(normalised_transmission)/(len(normalised_transmission)-1)]   
+    return metrics      
     
 def track_plot(analysis,y_axis):
     if y_axis == "centring":
