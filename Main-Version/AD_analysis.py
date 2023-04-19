@@ -226,10 +226,10 @@ class AD_analysis:
                 shift=atm_diff.diff_shift(wavelengths,i,guide_waveref,self.conditions)-centre_shift #-centre shift, so shifts are relative to the current aperture centre wavelength
                 shifts.append(shift)
 
-        #following needs fix for non-start HA centring, but parallatic = false isn't physical so not urgent
+        #following needs fix for non-start centring, but parallatic = false isn't physical so not urgent
         if reposition == False and parallatic == False: #For every snapshot, aperture centre is positioned to the first airmass' "aperture_waveref" wavelength
             centre_shift=atm_diff.diff_shift(aperture_waveref,airmasses[0],guide_waveref,self.conditions) #shift of the original aperture centre wavelength from guide wavelength
-            self.input['centred_on']=str(self.input['HA_range'][0])+"h"
+            self.input['centred_on']="First Airmass"
             for i in airmasses: #for each airmass, calculate AD shift
                 #shift values out of the function are all relative to the guide wavelength
                 shift=atm_diff.diff_shift(wavelengths,i,guide_waveref,self.conditions)-centre_shift #-centre shift, so shifts are relative to the original aperture centre wavelength
