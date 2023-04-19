@@ -64,6 +64,12 @@ class AD_analysis:
         self.input['regime']=regime 
         self.input['res']=res
         self.input['band']=[min_band,max_band]
+        if min_band==max_band:
+            self.input['WL_label']=min_band
+        elif (min_band=="IY" and max_band=="H") or (min_band =="B" and max_band == "R"):
+            self.input['WL_label']="All"
+        else:
+            self.input['WL_label']=str(min_band)+"-"+str(max_band)
 
         Config_regime = ConfigObj('./Architecture_parameters/'+regime+'_channel_conf.ini') #Loads VIS or NIR parameters
         
@@ -95,9 +101,10 @@ class AD_analysis:
         wavelengths: array, in nm astropy units
             array of the different monochromatic wavelengths to model
         """
-        self.input['regime']="N/A"
+        self.input['regime']="WLs"
         self.input['res']="N/A"
         self.input['band']=["N/A","N/A"]
+        self.input['WL_label']=str(start)+"-"+str(end)
        
         if segments == 0:
         #Wave is sampled between min_band min wavelength and max_band max wavelength in intervals of "sampling" variable

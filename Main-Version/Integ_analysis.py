@@ -26,7 +26,6 @@ def observation_transmission(transmissions):
     return integ_transmission
 
 def integ_trans(analysis,aperturecentre_waverefs,guide,parallatic=True,centring="mid HA"): 
-    
     integ_transmissions=[]
     for aperture_val in aperturecentre_waverefs:
         analysis.calculate_shifts(guide, aperture_val, centring=centring,reposition = False, parallatic=parallatic)
@@ -46,64 +45,18 @@ def integ_trans(analysis,aperturecentre_waverefs,guide,parallatic=True,centring=
     
     return integ_transmissions,opt_transmission
     
-def integ_metric(normalised_transmissions,metric):
-    if metric == "min trans":
-        min_metric=[]
-        for transmission_series in normalised_transmissions:
-            min_metric.append(min(transmission_series))
-        return min_metric
-    
-    if metric == "max trans":
-        max_metric=[]
-        for transmission_series in normalised_transmissions:
-            max_metric.append(max(transmission_series))
-        return max_metric
-    
+def integ_metric(normalised_transmissions):
+    metrics=[]
 
-    if metric == "average trans":
-        mean_metric=[]
-        for transmission_series in normalised_transmissions:
-            mean_metric.append(np.mean(transmission_series))
-        return max_metric
+    for transmission_series in normalised_transmissions:
+        metric=[]
+        metric.append(min(transmission_series))
+        metric.append(max(transmission_series))
+        metric.append(scipy.integrate.simpson(transmission_series)/(len(transmission_series)-1))
+        metrics.append(metric)
+    return metrics  
     
-    if metric == "all":
-        metrics=[]
-
-        for transmission_series in normalised_transmissions:
-            metric=[]
-            metric.append(min(transmission_series))
-            metric.append(max(transmission_series))
-            metric.append(scipy.integrate.simpson(transmission_series)/(len(transmission_series)-1))
-            metrics.append(metric)
-        return metrics  
-    
-    else:
-        print("Metric doesnt exist")
-        return
-    
-def integ_trans_solo(analysis,guide,aperture,centring="mid HA", parallatic=True): 
-    analysis.calculate_shifts(guide, aperture, centring=centring,reposition = False, parallatic=parallatic)
-    analysis.calculate_transmissions()
-    integ_transmission=observation_transmission(analysis.output['transmissions'])
-    
-    old_shifts=analysis.output['shifts'].copy()
-    for i in range(0,len(analysis.output['shifts'])):
-        for o in range(0,len(analysis.output['shifts'][i])):
-            analysis.output['shifts'][i][o]=0
-    analysis.calculate_transmissions()
-    opt_transmission=observation_transmission(analysis.output['transmissions'])
-    
-    #This step is to retain the original shifts in the code if they're wanted later
-    analysis.output['shifts']=old_shifts
-    
-    return integ_transmission,opt_transmission
-
-def integ_metric_solo(normalised_transmission):
-    metrics=[(min(normalised_transmission)),max(normalised_transmission),
-            scipy.integrate.simpson(normalised_transmission)/(len(normalised_transmission)-1)]   
-    return metrics      
-    
-def track_plot(analysis,y_axis):
+def track_plot(analysis,y_axis="centring"):
     if y_axis == "centring":
         HA_range=analysis.input['HA_range']
         aperture=analysis.input['aperture_waveref']
@@ -143,9 +96,9 @@ def track_plot(analysis,y_axis):
         ax.add_patch(circle1)    
         plt.axvline(0,color='black',linestyle='--',linewidth=0.7,label="AD axis at {}".format(analysis.input['centred_on']))
         for i in range(0,len(xs_new)):
-            plt.plot(xs_new[i],np.array(ys_new[i]),marker='x',color=cmap.to_rgba(i),label="%2.0f nm" %(round(analysis.output['wavelengths'][i].value,0)))
-        plt.scatter(0,-c,label='Guide = {}nm'.format(round(analysis.input['guide_waveref'].value*1000)),color='black',marker='+')
-        plt.title("HA: {}-{}h, Dec = {}, Guide = {}, Aperture = {} at {}".format(HA_range[0],HA_range[-1],analysis.input['targ_dec'],guide,aperture,analysis.input['centred_on']))
+            plt.plot(xs_new[i],np.array(ys_new[i]),marker='x',color=cmap.to_rgba(i),label="{}".format(analysis.output['wavelengths'][i].to(u.micron).round(3)))
+        plt.scatter(0,-c,label='Guide = {}'.format(analysis.input['guide_waveref'].round(3)),color='black',marker='+')
+        plt.title("Dec: {}, HA: {}-{}h, {} {}".format(analysis.input['targ_dec'],analysis.input['HA_range'][0],analysis.input['HA_range'][-1],analysis.input['regime'],analysis.input['WL_label']))
         plt.ylim(-0.5,0.5)
         plt.xlim(-0.5,0.5)
         plt.xlabel("x (arcsec)")
@@ -198,13 +151,15 @@ def track_plot(analysis,y_axis):
         ax.add_patch(circle1)    
         plt.axvline(0,color='black',linestyle='--',linewidth=0.7,label="PA = 0")
         for i in range(0,len(xs_new)):
-            plt.plot(xs_new[i],np.array(ys_new[i]),marker='x',color=cmap.to_rgba(i),label="%2.0f nm" %(round(analysis.output['wavelengths'][i].value,0)))
+            plt.plot(xs_new[i],np.array(ys_new[i]),marker='x',color=cmap.to_rgba(i),label="{}".format(analysis.output['wavelengths'][i].to(u.micron).round(3)))
         plt.ylim(-0.5,0.5)
         plt.xlim(-0.5,0.5)
-        plt.scatter(-c*np.sin(centred_q),-c*np.cos(centred_q),label='Guide = {}nm'.format(round(analysis.input['guide_waveref'].value*1000)),color='black',marker='+')
+        plt.scatter(-c*np.sin(centred_q),-c*np.cos(centred_q),label='Guide = {} at {}'.format(analysis.input['guide_waveref'].round(3),analysis.input['centred_on']),color='black',marker='+')
         plt.legend()
-        plt.title("HA: {}-{}h, Dec = {}, Guide = {}, Aperture = {} at {}".format(HA_range[0],HA_range[-1],analysis.input['targ_dec'],guide,aperture,analysis.input['centred_on']))
+        plt.title("Dec: {}, HA: {}-{}h, {} {}".format(analysis.input['targ_dec'],analysis.input['HA_range'][0],analysis.input['HA_range'][-1],analysis.input['regime'],analysis.input['WL_label']))
         plt.xlabel("x (arcsec)")
         plt.ylabel("y (arcsec)")
+ 
 
-
+        
+   
