@@ -1,9 +1,6 @@
-from configobj import ConfigObj
 import numpy as np
-from astropy import units as u
 import matplotlib.pyplot as plt
-from astropy.coordinates import Angle
-import dispersion_V3 as diff_func
+import dispersion_functions as diff_func
 import matplotlib as mpl
 
 class AD_simulation:
@@ -11,37 +8,32 @@ class AD_simulation:
         self.input={}
         self.output={}
         
-        self.config={}
-        imported_config=ConfigObj('conf.ini')
-        for config_section in imported_config.values():
-            for config_item in config_section.items():
-                self.config[config_item[0]]=config_item[1]
-        for kwarg in kwargs.items():
-            self.config[kwarg[0]]=kwarg[1]
+        self.config={
+        'telescope_diameter':39, #m
+        'wavefront_outer_scale':46, #m
+        'median_seeing':.68, #arcsec
+        'median_seeing_wl':.5, #um
+        'simulation_scale':0.01, #arcsec/pixel, default is 0.01
+        'relative_plate_PA_angle':0, #deg, relative angle of the plate/apertures and PA=0. For PA=0 along aperture semi major axis, set to 90 deg
+        'centring':0.5, #either 0.5 for mid index, or HA index
+        'latitude':-24.6272, #deg
+        'temperature':10, #deg C
+        'humidity':14.5, #%
+        'pressure':750.0 #mBa
+        }
         
-    def load_wavelengths(self,start,end,sampling,diameter):
-        """
-
-        """
-        self.output['wavelengths']=np.arange(start,end,sampling)
-        self.output['major_axis']=diameter
+        self.config.update(kwargs)
         
-    def load_MOSAIC_band(self,band,sampling):
+    def load_wavelengths(self,wavelengths):
         """
 
         """
-        self.input['band']=band
+        self.output['wavelengths']=np.array(wavelengths)
 
-        wave_min,wave_max= float(self.config[band][0]),float(self.config[band][1])
-
-        self.output['wavelengths'] = np.arange(wave_min,wave_max,sampling)   
-        self.output['major_axis']=float(self.config[band[0:6]+"_major_axis"])
-
-    def load_HA(self,HA_start,HA_end,declination):
+    def load_hour_angles(self,HA_range,declination):
         """
         
         """
-        HA_range=np.linspace(HA_start,HA_end,int(self.config['HA_samples']))
         self.input['HA_range']=HA_range
         self.input['declination']=declination
 
@@ -52,7 +44,7 @@ class AD_simulation:
         #Need to check if the target is below the horizon for the given list of HA, and if so remove it.
         LHA_below_horizon=np.rad2deg(np.arccos(-np.tan(lat)*np.tan(dec)))/15 
         if str(LHA_below_horizon) != 'nan': 
-            print("Target goes below Horizon above/below HA of +/- %2.1fh" % (LHA_below_horizon))
+            #print("Target goes below Horizon above/below HA of +/- %2.1fh" % (LHA_below_horizon))
             for val in HA_range.copy(): 
                 if abs(val) > abs(LHA_below_horizon):
                     print("At HA %2.2fh, target goes below horizon - removing this from HA range" % (val))
@@ -61,10 +53,10 @@ class AD_simulation:
             print("Target always below Horizon")
             return
 
-        airmasses=1/(np.sin(lat)*np.sin(dec)+np.cos(lat)*np.cos(dec)*np.cos(Angle(HA_range*u.hour).rad))
+        airmasses=1/(np.sin(lat)*np.sin(dec)+np.cos(lat)*np.cos(dec)*np.cos(np.array(HA_range)*2*np.pi/24))
         self.output['airmasses']=np.array(airmasses)
 
-        self.input['ZAs']=diff_func.airmass_to_ZA(airmasses)
+        self.input['ZA_range']=diff_func.airmass_to_ZA(airmasses)
         
         para_angles=diff_func.parallatic_angle(np.array(HA_range),dec,lat)
         self.output['raw_para_angles']=np.array(para_angles) #actual PAs    
@@ -109,28 +101,30 @@ class AD_simulation:
                            centre_shift_para[1]*np.cos(phi)+centre_shift_para[0]*np.sin(phi)]
         self.output['centre_shift']=centre_shift_para
         
-    def load_PSFs(self):
+    def load_PSFs(self,PSF_type="moffat",moffat_beta=2.5):
         """
         
         """
+        self.input['PSF_type']=PSF_type
         all_PSFs=[]
         all_aligned_PSFs=[]
         
         zero_shifts=np.zeros(np.shape(self.output['shifts'][0]))
 
         for i in range(0,len(self.output['airmasses'])):
-            PSFs=diff_func.make_moffat_PSFs(self.output['wavelengths'],self.output['shifts'][i],
-                                                        self.output['airmasses'][i],self.output['major_axis'],self.config)
-            aligned_PSFs=diff_func.make_moffat_PSFs(self.output['wavelengths'],zero_shifts,
-                                                          self.output['airmasses'][i],self.output['major_axis'],self.config)
+            PSFs=diff_func.make_PSFs(PSF_type,self.output['wavelengths'],self.output['shifts'][i],
+                                                        self.output['airmasses'][i],self.input['major_axis'],self.config,beta=moffat_beta)
+            aligned_PSFs=diff_func.make_PSFs(PSF_type,self.output['wavelengths'],zero_shifts,
+                                                          self.output['airmasses'][i],self.input['major_axis'],self.config,beta=moffat_beta)
             all_PSFs.append(PSFs)
             all_aligned_PSFs.append(aligned_PSFs)
 
         self.output['PSFs']=all_PSFs
         self.output['aligned_PSFs']=all_aligned_PSFs
         
-    def load_aperture(self,aperture_type="hexagons"):
-        aperture=diff_func.make_aperture(aperture_type,self.input['band'],self.output['major_axis'],self.config)
+    def load_aperture(self,major_axis,aperture_type="hexagons",hexagon_radius=1):
+        self.input['major_axis']=major_axis
+        aperture=diff_func.make_aperture(aperture_type,major_axis,self.config,hexagon_radius=hexagon_radius)
         self.output['aperture']=aperture
         
     def calculate_integration_transmissions(self):
@@ -147,57 +141,63 @@ class AD_simulation:
         self.output['relative_transmissions']=relative_transmissions
 
         relative_integration_transmissions=np.mean(relative_transmissions,axis=0)
+        no_AD_integration_transmissions=np.mean(no_AD_transmissions,axis=0)
         raw_integration_transmissions=np.mean(raw_transmissions,axis=0)
         self.output['raw_integration_transmissions']=raw_integration_transmissions
+        self.output['no_AD_integration_transmissions']=no_AD_integration_transmissions
         self.output['relative_integration_transmissions']=relative_integration_transmissions
 
-    def integration_plots(self):
+    def integration_plots(self,y_axis='relative',track_indexes=[0,-1]):
         """
         Function to illustrate simulation results
         1) Transmission vs wavelength curves for individual fibres and entire bundle
         2) Track plot of monochromatic spot PSFs on the aperture over an integration
         """
-        if self.input['band'][3:6]=="NIR":
-            colour='red'
-        else:
-            colour='blue'
         plt.style.use('bmh')
         fig=plt.figure(figsize=[7,5])
-        plt.axhline(y=1,label='No AD Transmission, {}'.format("numerical moffat"),color='black',linestyle='--')
+        if y_axis=='relative':
+            y_axis_data=self.output['relative_integration_transmissions']
+            plt.axhline(y=1,label='No AD Transmission, {}'.format(self.input['PSF_type']),color='black',linestyle='--')
+            plt.ylabel("Transmission Relative to No-AD")
+        if y_axis=='raw':
+            y_axis_data=self.output['raw_integration_transmissions']
+            plt.ylabel("Raw Transmission")
+            plt.plot(self.output['wavelengths'],self.output['no_AD_integration_transmissions'],color='black',linestyle='--',label='No AD Transmission, {}'.format(self.input['PSF_type']))
+            
         plt.axvline(self.input['guide_waveref'],label="Guide = {}um".format(self.input['guide_waveref']),color='black',linestyle='--',linewidth=0.5)
-        plt.plot(self.output['wavelengths'],self.output['relative_integration_transmissions'],label="Aperture = {}um".format(self.input['aperture_waveref']),color=colour)
-        plt.ylabel("Transmission Relative to No-AD")
+        plt.axvline(self.input['aperture_waveref'],label="Aperture = {}um".format(self.input['aperture_waveref']),color='C0',linestyle='--',linewidth=0.5)
+        plt.plot(self.output['wavelengths'],y_axis_data)
         plt.ylim(0,1.1)
         plt.xlabel("Wavelength (um)")
         plt.legend()
         
         fig, ax = plt.subplots(figsize=[5,5]) 
-        weights = np.linspace(0, len(self.output['wavelengths'])-1,4)
+        weights = np.linspace(0, len(self.output['wavelengths'])-1,len(track_indexes))
         norm = mpl.colors.Normalize(vmin=min(weights), vmax=max(weights))
         cmap = mpl.cm.ScalarMappable(norm=norm, cmap='seismic')
-        circle1 = plt.Circle((0, 0), self.output['major_axis']/2, color='black', fill=False, label='~Aperture')
+        circle1 = plt.Circle((0, 0), self.input['major_axis']/2, color='black', fill=False, label='Major Axis')
         ax.add_patch(circle1)    
         plt.axvline(0,color='black',linestyle='--',linewidth=0.7,label="PA = {}".format(self.config['relative_plate_PA_angle']))
         plt.scatter(self.output['centre_shift'][0],self.output['centre_shift'][1],label='Guide = {}um'.format(self.input['guide_waveref']),color='black',marker='+')
         plt.xlim(-0.4,0.4)
         plt.ylim(-0.4,0.4)
         shifts=self.output['shifts']
-        for i in weights:
+        for count,i in enumerate(track_indexes):
             xs,ys=[],[]
             for o in range(0,len(shifts)):
-                xs.append(shifts[o][int(i)][0])
-                ys.append(shifts[o][int(i)][1]) 
-            plt.plot(xs,ys,marker='x',color=cmap.to_rgba(int(i)),label="{}um".format(round(self.output['wavelengths'][int(i)],4)))
+                xs.append(shifts[o][i][0])
+                ys.append(shifts[o][i][1]) 
+            plt.plot(xs,ys,marker='x',color=cmap.to_rgba(weights[count]),label="{}um".format(round(self.output['wavelengths'][i],4)))
         plt.legend()
         plt.xlabel("x (arcsec)")
         plt.ylabel("y (arcsec)")
 
-    def load_ZA(self, ZA_vals):
+    def load_ZA(self, ZA_range):
         """
         """
-        airmasses=diff_func.ZA_to_airmass(ZA_vals)
+        airmasses=diff_func.ZA_to_airmass(ZA_range)
         self.output['airmasses']=airmasses
-        self.input['ZA_vals']=ZA_vals
+        self.input['ZA_range']=ZA_range
     
     def calculate_snapshot_shifts(self,aperture_waveref):
         self.input['aperture_waveref']=aperture_waveref
@@ -226,13 +226,20 @@ class AD_simulation:
         self.output['no_AD_transmissions']=no_AD_transmissions
         self.output['relative_transmissions']=relative_transmissions
         
-    def snapshot_plots(self):
+    def snapshot_plots(self,y_axis='relative'):
         plt.style.use('bmh')
         fig=plt.figure(figsize=[7,5])
-        plt.axhline(y=1,label='No AD Transmission, {}'.format("numerical moffat"),color='black',linestyle='--')
-        plt.axvline(self.input['aperture_waveref'],label="Aperture = {}um".format(self.input['aperture_waveref']),color='black',linestyle='--',linewidth=0.5)
-        for count,trans in enumerate(self.output['relative_transmissions']):
-            plt.plot(self.output['wavelengths'],trans,label="ZA = {} deg".format(self.input['ZA_vals'][count]))
+        if y_axis=='relative':
+            y_data=self.output['relative_transmissions']
+            plt.axhline(y=1,label='No AD Transmission, {}'.format(self.input['PSF_type']),color='black',linestyle='--')
+            plt.ylabel("Transmission Relative to No-AD")
+        if y_axis=='raw':
+            y_data=self.output['raw_transmissions']
+            plt.ylabel("Raw Transmission")
+        
+        plt.axvline(self.input['aperture_waveref'],label="Aperture = {}um".format(self.input['aperture_waveref']),color='C0',linestyle='--',linewidth=0.5)
+        for count,trans in enumerate(y_data):
+            plt.plot(self.output['wavelengths'],trans,label="ZA = {} deg".format(round(self.input['ZA_range'][count],1)))
         plt.ylabel("Transmission Relative to No-AD")
         plt.ylim(0,1.1)
         plt.xlabel("Wavelength (um)")

@@ -3,7 +3,7 @@ import numpy as np
 from astropy import units as u
 import matplotlib.pyplot as plt
 from astropy.coordinates import Angle
-import dispersion_V3 as diff_func
+import dispersion_functions as diff_func
 import matplotlib as mpl
 from astropy.io import fits
 
